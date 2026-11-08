@@ -1,0 +1,94 @@
+# Build desktop installers and upload them to a GitHub Release.
+# See README § "Releases" for how to cut a release.
+name: Release
+
+on:
+  release:
+    types: [published]
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to build for (e.g. v0.1.0). Create the tag on GitHub first.'
+        required: true
+        type: string
+
+concurrency:
+  group: tauri-release-${{ inputs.tag || github.event.release.tag_name || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  publish-tauri:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            args: --target aarch64-apple-darwin
+            rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
+          - platform: macos-latest
+            args: --target x86_64-apple-darwin
+            rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
+          - platform: ubuntu-22.04
+            args: ''
+            rust_targets: ''
+          - platform: windows-latest
+            args: ''
+            rust_targets: ''
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_targets }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./src-tauri -> target
+
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build and upload release assets
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ inputs.tag || github.event.release.tag_name || github.ref_name }}
+          releaseId: ${{ github.event.release.id || '' }}
+          releaseName: My POS release
+          releaseBody: |
+            Desktop installers for **My POS**.
+
+            | Platform | Files |
+            | --- | --- |
+            | macOS (Apple Silicon) | `.dmg`, `.app.tar.gz` (aarch64) |
+            | macOS (Intel) | `.dmg`, `.app.tar.gz` (x86_64) |
+            | Windows | NSIS `.exe` setup, WiX `.msi` |
+            | Linux | `.deb`, `.AppImage`, `.rpm` |
+
+            In-app updates use `latest.json` on this release when `TAURI_SIGNING_PRIVATE_KEY` is configured.
+          uploadUpdaterJson: true
+          args: ${{ matrix.args }}
