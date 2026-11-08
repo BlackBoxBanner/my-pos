@@ -1,0 +1,119 @@
+# Windows-only installers (NSIS .exe + WiX .msi) — uses fewer Actions minutes than the full Release matrix.
+# Use when billing is healthy, or when the repo is public (standard runners are free on public repos).
+# See README § "Windows installers without cost" for billing lock + Azure Pipelines fallback.
+name: Release (Windows only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v0.1.0). Create the tag on GitHub first, or leave empty to only upload workflow artifacts.'
+        required: false
+        type: string
+      upload_to_release:
+        description: 'Attach installers to the GitHub Release for this tag (requires tag + write permissions)'
+        required: false
+        type: boolean
+        default: true
+  push:
+    tags:
+      - 'v*'
+
+concurrency:
+  group: tauri-release-windows-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-installers:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./src-tauri -> target
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Resolve build args (unsigned CI vs signed release)
+        id: build
+        shell: bash
+        env:
+          HAS_SIGNING_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+          INPUT_UPLOAD: ${{ github.event.inputs.upload_to_release }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          ARGS="--config src-tauri/tauri.ci-windows.json"
+          if [ "$HAS_SIGNING_KEY" = "true" ]; then
+            ARGS="--config src-tauri/tauri.ci-windows.json --config '{\"bundle\":{\"createUpdaterArtifacts\":true}}'"
+          fi
+          echo "args=$ARGS" >> "$GITHUB_OUTPUT"
+          TAG="$REF_NAME"
+          if [ -n "$INPUT_TAG" ]; then
+            TAG="$INPUT_TAG"
+          fi
+          if [ "$EVENT_NAME" = "push" ] && [[ "$REF_NAME" == v* ]]; then
+            echo "upload_release=true" >> "$GITHUB_OUTPUT"
+            echo "tag_name=$REF_NAME" >> "$GITHUB_OUTPUT"
+          elif [ "$INPUT_UPLOAD" = "true" ] && [ -n "$TAG" ] && [[ "$TAG" == v* ]]; then
+            echo "upload_release=true" >> "$GITHUB_OUTPUT"
+            echo "tag_name=$TAG" >> "$GITHUB_OUTPUT"
+          else
+            echo "upload_release=false" >> "$GITHUB_OUTPUT"
+            echo "tag_name=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build and upload to GitHub Release
+        if: steps.build.outputs.upload_release == 'true'
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ steps.build.outputs.tag_name }}
+          releaseName: My POS release (Windows)
+          releaseBody: |
+            Windows installers for **My POS**.
+
+            | File | Description |
+            | --- | --- |
+            | `*-setup.exe` | NSIS installer |
+            | `*.msi` | WiX MSI installer |
+
+            Built by [Release (Windows only)](.github/workflows/release-windows-only.yml).
+          uploadUpdaterJson: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
+          args: ${{ steps.build.outputs.args }}
+
+      - name: Build installers (artifacts only)
+        if: steps.build.outputs.upload_release != 'true'
+        run: npm run tauri build -- ${{ steps.build.outputs.args }}
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+      - name: Upload workflow artifacts
+        if: steps.build.outputs.upload_release != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installers-${{ github.sha }}
+          path: |
+            src-tauri/target/release/bundle/nsis/**
+            src-tauri/target/release/bundle/msi/**
+          if-no-files-found: error

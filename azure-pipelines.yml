@@ -1,0 +1,53 @@
+# Zero-cost Windows CI when GitHub Actions is blocked by account billing.
+# Free tier: 1 parallel Microsoft-hosted job, 60 min/job, 1800 min/month (private GitHub repo OK).
+# Setup: docs/AZURE_WINDOWS_BUILD.md (summary also in README § Windows installers without cost).
+trigger:
+  branches:
+    include:
+      - main
+  tags:
+    include:
+      - v*
+
+pr: none
+
+pool:
+  vmImage: windows-latest
+
+variables:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  - job: WindowsInstallers
+    displayName: Build Windows NSIS + MSI
+    timeoutInMinutes: 60
+    steps:
+      - checkout: self
+        fetchDepth: 1
+
+      - task: NodeTool@0
+        inputs:
+          versionSpec: 22.x
+        displayName: Use Node.js 22
+
+      - script: npm ci
+        displayName: Install frontend dependencies
+
+      - script: |
+          curl -sSf https://win.rustup.rs/x86_64 -o rustup-init.exe
+          rustup-init.exe -y --default-toolchain stable
+          echo ##vso[task.prependpath]%USERPROFILE%\.cargo\bin
+        displayName: Install Rust stable
+
+      - script: npm run tauri build -- --config src-tauri/tauri.ci-windows.json
+        displayName: Build NSIS (.exe) and MSI (.msi)
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: $(TAURI_SIGNING_PRIVATE_KEY)
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: $(TAURI_SIGNING_PRIVATE_KEY_PASSWORD)
+
+      - task: PublishBuildArtifacts@1
+        displayName: Publish Windows installers
+        inputs:
+          PathtoPublish: src-tauri/target/release/bundle
+          ArtifactName: windows-installers
+          publishLocation: Container

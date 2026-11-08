@@ -40,7 +40,7 @@
       "active": true,
       "dialog": false,
       "endpoints": [
-        "https://github.com/svacmai/my-pos/releases/latest/download/latest.json"
+        "https://github.com/BlackBoxBanner/my-pos/releases/latest/download/latest.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IENGQ0Q0QjNBNDg0MTkyNjQKUldSa2trRklPa3ZOenc4ZDVIb2lFMWRIOFV4Zmg0UkEwQ3Y0TWxBbjZQMHBtRjgxeFowUGFpV1gK"
     }
