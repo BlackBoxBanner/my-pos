@@ -28,7 +28,7 @@ function updaterMessage(error: unknown): string {
   const lower = text.toLowerCase();
   if (
     lower.includes("not configured") ||
-    lower.includes("updater") && lower.includes("disabled") ||
+    (lower.includes("updater") && lower.includes("disabled")) ||
     lower.includes("pubkey") ||
     lower.includes("endpoint")
   ) {
