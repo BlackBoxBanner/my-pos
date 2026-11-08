@@ -16,7 +16,7 @@ on:
         type: string
 
 concurrency:
-  group: tauri-release-${{ github.event.inputs.tag || github.event.release.tag_name || github.ref_name }}
+  group: tauri-release-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
