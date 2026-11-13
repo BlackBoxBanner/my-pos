@@ -3,6 +3,12 @@ import { AppHeader, type AppTab } from "./components/AppHeader";
 import { CheatsheetModal } from "./components/CheatsheetModal";
 import { OnboardingWizard } from "./components/OnboardingWizard";
 import { ShopProvider, useShop } from "./lib/shopContext";
+import {
+  readUiZoom,
+  setUiZoom,
+  stepUiZoom,
+  UI_ZOOM_DEFAULT,
+} from "./lib/uiZoom";
 
 const SellPage = lazy(() =>
   import("./pages/SellPage").then((m) => ({ default: m.SellPage })),
@@ -25,7 +31,12 @@ function AppInner() {
   const [pendingBarcode, setPendingBarcode] = useState<string | null>(null);
   const [cheatsheet, setCheatsheet] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [zoom, setZoom] = useState(() => readUiZoom());
   const { report, lowStockCount, isTauri, settings, refreshStatus } = useShop();
+
+  const changeZoom = useCallback((percent: number) => {
+    setZoom(setUiZoom(percent));
+  }, []);
 
   useEffect(() => {
     if (isTauri && settings && !settings.onboardingDone) {
@@ -34,6 +45,8 @@ function AppInner() {
   }, [isTauri, settings]);
 
   useEffect(() => {
+    let wheelAcc = 0;
+
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "?" && !e.ctrlKey && !e.metaKey && !e.altKey) {
         const tag = (e.target as HTMLElement)?.tagName;
@@ -41,6 +54,26 @@ function AppInner() {
         e.preventDefault();
         setCheatsheet(true);
       }
+
+      const mod = e.ctrlKey || e.metaKey;
+      if (mod && !e.altKey) {
+        if (e.key === "=" || e.key === "+") {
+          e.preventDefault();
+          setZoom((z) => stepUiZoom(1, z));
+          return;
+        }
+        if (e.key === "-" || e.key === "_") {
+          e.preventDefault();
+          setZoom((z) => stepUiZoom(-1, z));
+          return;
+        }
+        if (e.key === "0") {
+          e.preventDefault();
+          setZoom(setUiZoom(UI_ZOOM_DEFAULT));
+          return;
+        }
+      }
+
       if (e.ctrlKey && !e.metaKey && !e.altKey) {
         const map: Record<string, AppTab> = {
           "1": "sell",
@@ -56,8 +89,24 @@ function AppInner() {
         }
       }
     };
+
+    const onWheel = (e: WheelEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+      // Trackpads fire many tiny deltas; accumulate before stepping 10%.
+      wheelAcc += e.deltaY;
+      if (Math.abs(wheelAcc) < 50) return;
+      const dir = wheelAcc > 0 ? -1 : 1;
+      wheelAcc = 0;
+      setZoom((z) => stepUiZoom(dir, z));
+    };
+
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("wheel", onWheel, { passive: false });
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("wheel", onWheel);
+    };
   }, []);
 
   const goAddProduct = useCallback((barcode: string) => {
@@ -70,7 +119,7 @@ function AppInner() {
   }, []);
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-[var(--color-bg)]">
+    <div className="app-zoom-shell flex min-h-0 flex-col bg-[var(--color-bg)]">
       <AppHeader
         tab={tab}
         onTabChange={(t) => {
@@ -80,37 +129,39 @@ function AppInner() {
         report={report}
         lowStockCount={lowStockCount}
         isTauri={isTauri}
+        zoom={zoom}
+        onZoomChange={changeZoom}
         onOpenCheatsheet={() => setCheatsheet(true)}
       />
 
-      <main className="min-h-0 min-w-0 flex-1 p-4 print:p-0">
+      <main className="min-h-0 min-w-0 flex-1 overflow-hidden p-4 print:overflow-visible print:p-0">
         <Suspense
           fallback={
             <p className="p-6 text-center text-sm text-slate-500">กำลังโหลด…</p>
           }
         >
-        <div className={tab === "sell" ? "h-full" : "hidden"}>
-          <SellPage
-            onAddProduct={goAddProduct}
-            active={tab === "sell"}
-            onGoImport={() => setTab("products")}
-          />
-        </div>
-        <div className={tab === "products" ? "h-full" : "hidden"}>
-          <ProductsPage
-            initialBarcode={pendingBarcode}
-            onConsumedBarcode={consumeBarcode}
-          />
-        </div>
-        <div className={tab === "stock" ? "h-full" : "hidden"}>
-          <StockPage active={tab === "stock"} />
-        </div>
-        <div className={tab === "reports" ? "h-full" : "hidden"}>
-          <ReportsPage active={tab === "reports"} />
-        </div>
-        <div className={tab === "settings" ? "h-full" : "hidden"}>
-          <SettingsPage active={tab === "settings"} />
-        </div>
+          <div className={tab === "sell" ? "h-full min-h-0" : "hidden"}>
+            <SellPage
+              onAddProduct={goAddProduct}
+              active={tab === "sell"}
+              onGoImport={() => setTab("products")}
+            />
+          </div>
+          <div className={tab === "products" ? "h-full min-h-0" : "hidden"}>
+            <ProductsPage
+              initialBarcode={pendingBarcode}
+              onConsumedBarcode={consumeBarcode}
+            />
+          </div>
+          <div className={tab === "stock" ? "h-full min-h-0" : "hidden"}>
+            <StockPage active={tab === "stock"} />
+          </div>
+          <div className={tab === "reports" ? "h-full min-h-0" : "hidden"}>
+            <ReportsPage active={tab === "reports"} />
+          </div>
+          <div className={tab === "settings" ? "h-full min-h-0" : "hidden"}>
+            <SettingsPage active={tab === "settings"} />
+          </div>
         </Suspense>
       </main>
 

@@ -7,11 +7,11 @@ on:
     types: [published]
   push:
     tags:
-      - 'v*'
+      - "v*"
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag to build for (e.g. v0.1.0). Create the tag on GitHub first.'
+        description: "Release tag to build for (e.g. v0.1.0). Create the tag on GitHub first."
         required: true
         type: string
 
@@ -34,11 +34,11 @@ jobs:
             args: --target x86_64-apple-darwin
             rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
           - platform: ubuntu-22.04
-            args: ''
-            rust_targets: ''
+            args: ""
+            rust_targets: ""
           - platform: windows-latest
-            args: ''
-            rust_targets: ''
+            args: ""
+            rust_targets: ""
 
     runs-on: ${{ matrix.platform }}
     steps:

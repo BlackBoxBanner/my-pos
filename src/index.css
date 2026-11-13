@@ -27,13 +27,30 @@
 html,
 body,
 #root {
+  width: 100%;
   height: 100%;
+  margin: 0;
+  /* clip (not hidden): no scroll container, so zoomed shell cannot shift the page */
+  overflow: clip;
 }
 
 body {
-  margin: 0;
   background: var(--color-bg);
   color: var(--color-text);
+}
+
+#root {
+  --ui-zoom: 1;
+}
+
+/* Expand layout box then scale so zoom-out fits more UI without page scroll. */
+.app-zoom-shell {
+  box-sizing: border-box;
+  width: calc(100% / var(--ui-zoom));
+  height: calc(100% / var(--ui-zoom));
+  transform: scale(var(--ui-zoom));
+  transform-origin: 0 0;
+  overflow: clip;
 }
 
 .field-input,
@@ -122,6 +139,18 @@ body {
 @media print {
   body {
     background: #fff;
+  }
+
+  #root {
+    --ui-zoom: 1;
+    overflow: visible;
+  }
+
+  .app-zoom-shell {
+    width: 100% !important;
+    height: auto !important;
+    transform: none !important;
+    overflow: visible;
   }
 
   .no-print {

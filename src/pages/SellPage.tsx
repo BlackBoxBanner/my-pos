@@ -363,15 +363,17 @@ export function SellPage({ onAddProduct, onGoImport, active = true }: Props) {
       </section>
 
       <div className="flex min-h-0 flex-1 gap-4">
-        <aside className="flex min-h-0 w-[min(48%,520px)] shrink-0 flex-col card-surface">
-          <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+        <aside className="flex min-h-0 w-[min(48%,520px)] shrink-0 flex-col overflow-y-auto card-surface">
+          <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-4 py-3">
             <h2 className="text-lg font-semibold">ตะกร้า</h2>
             <span className="text-xs text-slate-400">{cart.length} รายการ</span>
           </div>
-          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-4 py-3">
+          <div className="min-h-0 flex-1 basis-0 space-y-2 overflow-y-auto px-4 py-3">
             {cart.length === 0 && (
               <p className="py-8 text-center text-sm text-slate-500">
-                ตะกร้าว่าง — สแกนหรือค้นหาเพื่อเพิ่มสินค้า
+                {catalogEmpty
+                  ? "ตะกร้าว่าง"
+                  : "ตะกร้าว่าง — สแกนหรือค้นหาเพื่อเพิ่มสินค้า"}
               </p>
             )}
             {cart.map((line) => (
@@ -436,7 +438,7 @@ export function SellPage({ onAddProduct, onGoImport, active = true }: Props) {
             ))}
           </div>
 
-          <div className="sticky bottom-0 space-y-3 border-t border-slate-100 bg-white px-4 py-4">
+          <div className="shrink-0 space-y-3 border-t border-slate-100 bg-white px-4 py-4">
             {warn && <Alert tone="warning">{warn}</Alert>}
             {error && <Alert tone="error">{error}</Alert>}
             <div className="flex justify-between text-2xl font-bold tracking-tight">
@@ -546,11 +548,7 @@ export function SellPage({ onAddProduct, onGoImport, active = true }: Props) {
             )}
             <div className="grid grid-cols-2 gap-2 xl:grid-cols-3">
               {gridProducts.map((p) => (
-                <ProductSellTile
-                  key={p.id}
-                  product={p}
-                  onAdd={handleTileAdd}
-                />
+                <ProductSellTile key={p.id} product={p} onAdd={handleTileAdd} />
               ))}
             </div>
           </div>

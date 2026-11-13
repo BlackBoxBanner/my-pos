@@ -4,6 +4,10 @@ import { Button } from "./ui/Button";
 export function CheatsheetModal({ onClose }: { onClose: () => void }) {
   const rows = [
     ["Ctrl+1 … 5", "สลับแท็บ ขาย / สินค้า / สต็อก / รายงาน / ตั้งค่า"],
+    ["Ctrl/Cmd +", "ซูมเข้า"],
+    ["Ctrl/Cmd −", "ซูมออก"],
+    ["Ctrl/Cmd 0", "รีเซ็ตซูม 100%"],
+    ["Ctrl/Cmd + ล้อเมาส์", "ซูมเข้า / ออก"],
     ["Enter (ช่องสแกน)", "เพิ่มสินค้าจากบาร์โค้ด"],
     ["3*บาร์โค้ด", "เพิ่มจำนวน 3 ชิ้น"],
     ["F9", "ชำระเงินสด"],
