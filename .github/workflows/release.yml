@@ -69,6 +69,25 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      # Updater artifacts require TAURI_SIGNING_PRIVATE_KEY. Without it, Tauri fails the
+      # bundle step ("public key has been found, but no private key"). Unsigned installers
+      # still upload; latest.json is only produced when the secret is set.
+      - name: Resolve build args
+        id: build
+        shell: bash
+        env:
+          HAS_SIGNING_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
+          BASE_ARGS: ${{ matrix.args }}
+        run: |
+          set -euo pipefail
+          if [ "$HAS_SIGNING_KEY" = "true" ]; then
+            printf 'args=%s\n' "$BASE_ARGS" >> "$GITHUB_OUTPUT"
+          elif [ -n "$BASE_ARGS" ]; then
+            printf 'args=%s --config src-tauri/tauri.ci-unsigned.json\n' "$BASE_ARGS" >> "$GITHUB_OUTPUT"
+          else
+            printf 'args=--config src-tauri/tauri.ci-unsigned.json\n' >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build and upload release assets
         uses: tauri-apps/tauri-action@v1
         env:
@@ -90,5 +109,5 @@ jobs:
             | Linux | `.deb`, `.AppImage`, `.rpm` |
 
             In-app updates use `latest.json` on this release when `TAURI_SIGNING_PRIVATE_KEY` is configured.
-          uploadUpdaterJson: true
-          args: ${{ matrix.args }}
+          uploadUpdaterJson: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
+          args: ${{ steps.build.outputs.args }}
