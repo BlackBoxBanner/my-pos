@@ -10,7 +10,6 @@ import {
 } from "../lib/api";
 import { formatDateTime } from "../lib/datetime";
 import { useShop } from "../lib/shopContext";
-import { PinModal } from "../components/PinModal";
 import { ProductCombobox } from "../components/ProductCombobox";
 import { Alert } from "../components/ui/Alert";
 import { Button } from "../components/ui/Button";
@@ -28,7 +27,6 @@ export function StockPage({ active }: { active?: boolean }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
-  const [pinOpen, setPinOpen] = useState(false);
   const [lowOnly, setLowOnly] = useState(false);
 
   const load = async () => {
@@ -52,7 +50,7 @@ export function StockPage({ active }: { active?: boolean }) {
 
   const selected = products.find((p) => p.id === productId);
 
-  const doSubmit = async (pin?: string) => {
+  const submit = async () => {
     if (busyRef.current) return;
     if (productId === "") {
       setError("กรุณาเลือกสินค้า");
@@ -74,30 +72,16 @@ export function StockPage({ active }: { active?: boolean }) {
       if (mode === "receive") {
         await receiveStock(productId, n, note || undefined);
       } else {
-        await adjustStock(productId, n, note || undefined, pin);
+        await adjustStock(productId, n, note || undefined);
       }
       setQty("");
       setNote("");
-      setPinOpen(false);
       await load();
     } catch (e) {
       setError(errorMessage(e));
-      throw e;
     } finally {
       busyRef.current = false;
       setBusy(false);
-    }
-  };
-
-  const submit = async () => {
-    if (mode === "adjust") {
-      setPinOpen(true);
-      return;
-    }
-    try {
-      await doSubmit();
-    } catch {
-      /* shown */
     }
   };
 
@@ -153,9 +137,6 @@ export function StockPage({ active }: { active?: boolean }) {
             ปรับยอด
           </Button>
         </div>
-        {mode === "adjust" && (
-          <Alert tone="warning">การปรับยอดต้องใช้รหัสผู้จัดการ</Alert>
-        )}
         <Input
           label={mode === "receive" ? "จำนวนที่รับเข้า" : "จำนวนสต็อกใหม่"}
           value={qty}
@@ -182,59 +163,48 @@ export function StockPage({ active }: { active?: boolean }) {
           <h2 className="text-lg font-semibold">ประวัติการเคลื่อนไหว</h2>
         </div>
         <div className="overflow-x-auto">
-        <table className="w-full min-w-[560px] text-left text-sm">
-          <thead className="bg-slate-50 text-slate-600">
-            <tr>
-              <th className="px-4 py-3 font-medium">เวลา</th>
-              <th className="px-4 py-3 font-medium">สินค้า</th>
-              <th className="px-4 py-3 font-medium">ประเภท</th>
-              <th className="px-4 py-3 font-medium">จำนวน</th>
-              <th className="px-4 py-3 font-medium">หมายเหตุ</th>
-            </tr>
-          </thead>
-          <tbody>
-            {movements.length === 0 && (
+          <table className="w-full min-w-[560px] text-left text-sm">
+            <thead className="bg-slate-50 text-slate-600">
               <tr>
-                <td
-                  colSpan={5}
-                  className="px-4 py-10 text-center text-slate-500"
-                >
-                  ยังไม่มีการเคลื่อนไหวสต็อก
-                </td>
+                <th className="px-4 py-3 font-medium">เวลา</th>
+                <th className="px-4 py-3 font-medium">สินค้า</th>
+                <th className="px-4 py-3 font-medium">ประเภท</th>
+                <th className="px-4 py-3 font-medium">จำนวน</th>
+                <th className="px-4 py-3 font-medium">หมายเหตุ</th>
               </tr>
-            )}
-            {movements.map((m) => (
-              <tr key={m.id} className="border-t border-slate-100">
-                <td className="px-4 py-3 text-slate-500">
-                  {formatDateTime(m.createdAt)}
-                </td>
-                <td className="px-4 py-3 font-medium">{m.productName}</td>
-                <td className="px-4 py-3">{reasonLabel(m.reason)}</td>
-                <td
-                  className={`px-4 py-3 font-medium ${
-                    m.qtyDelta < 0 ? "text-red-600" : "text-emerald-700"
-                  }`}
-                >
-                  {m.qtyDelta > 0 ? `+${m.qtyDelta}` : m.qtyDelta}
-                </td>
-                <td className="px-4 py-3 text-slate-500">{m.note ?? "—"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {movements.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={5}
+                    className="px-4 py-10 text-center text-slate-500"
+                  >
+                    ยังไม่มีการเคลื่อนไหวสต็อก
+                  </td>
+                </tr>
+              )}
+              {movements.map((m) => (
+                <tr key={m.id} className="border-t border-slate-100">
+                  <td className="px-4 py-3 text-slate-500">
+                    {formatDateTime(m.createdAt)}
+                  </td>
+                  <td className="px-4 py-3 font-medium">{m.productName}</td>
+                  <td className="px-4 py-3">{reasonLabel(m.reason)}</td>
+                  <td
+                    className={`px-4 py-3 font-medium ${
+                      m.qtyDelta < 0 ? "text-red-600" : "text-emerald-700"
+                    }`}
+                  >
+                    {m.qtyDelta > 0 ? `+${m.qtyDelta}` : m.qtyDelta}
+                  </td>
+                  <td className="px-4 py-3 text-slate-500">{m.note ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </section>
-
-      {pinOpen && (
-        <PinModal
-          title="ยืนยันปรับยอดสต็อก"
-          message="กรอกรหัสผู้จัดการเพื่อปรับยอด"
-          onCancel={() => setPinOpen(false)}
-          onConfirm={async (pin) => {
-            await doSubmit(pin);
-          }}
-        />
-      )}
     </div>
   );
 }

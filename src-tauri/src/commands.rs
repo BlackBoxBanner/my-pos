@@ -4,12 +4,9 @@ use crate::models::{
     SaleItem, SaleSummary, ShopSettings, StockMovement, TodayReport, UpdateProductInput,
 };
 use crate::timeutil::{day_bounds_iso, now_iso, today_business_date};
-use sha2::{Digest, Sha256};
 use sqlx::{QueryBuilder, Sqlite, SqlitePool, Transaction};
 use tauri::{AppHandle, State};
 
-const PIN_SALT: &str = "my-pos-manager-pin-v1";
-const PIN_KEY: &str = "manager_pin_hash";
 const REPORT_SALES_LIMIT: i64 = 200;
 
 fn normalize_barcode(barcode: &Option<String>) -> Option<String> {
@@ -31,13 +28,6 @@ fn escape_like(input: &str) -> String {
         }
     }
     out
-}
-
-fn hash_pin(pin: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(PIN_SALT.as_bytes());
-    hasher.update(pin.as_bytes());
-    hex::encode(hasher.finalize())
 }
 
 fn validate_create_input(input: &CreateProductInput) -> AppResult<()> {
@@ -660,13 +650,7 @@ pub async fn update_product(
     }
 }
 
-pub async fn delete_product_inner(
-    pool: &SqlitePool,
-    id: i64,
-    pin: Option<&str>,
-) -> AppResult<()> {
-    require_manager_pin(pool, pin).await?;
-
+pub async fn delete_product_inner(pool: &SqlitePool, id: i64) -> AppResult<()> {
     let sale_refs: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM sale_items WHERE product_id = ?1",
     )
@@ -711,12 +695,8 @@ pub async fn delete_product_inner(
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub async fn delete_product(
-    pool: State<'_, SqlitePool>,
-    id: i64,
-    pin: Option<String>,
-) -> AppResult<()> {
-    delete_product_inner(pool.inner(), id, pin.as_deref()).await
+pub async fn delete_product(pool: State<'_, SqlitePool>, id: i64) -> AppResult<()> {
+    delete_product_inner(pool.inner(), id).await
 }
 
 const MAX_PINNED_PRODUCTS: i64 = 24;
@@ -840,12 +820,10 @@ pub async fn adjust_stock_inner(
     product_id: i64,
     new_qty: i64,
     note: Option<String>,
-    pin: Option<String>,
 ) -> AppResult<Product> {
     if new_qty < 0 {
         return Err(AppError::msg("จำนวนสต็อกต้องไม่ติดลบ"));
     }
-    require_manager_pin(pool, pin.as_deref()).await?;
 
     let mut tx = map_sqlx(pool.begin().await)?;
     let product = fetch_product_tx(&mut tx, product_id).await?;
@@ -887,9 +865,8 @@ pub async fn adjust_stock(
     product_id: i64,
     new_qty: i64,
     note: Option<String>,
-    pin: Option<String>,
 ) -> AppResult<Product> {
-    adjust_stock_inner(pool.inner(), product_id, new_qty, note, pin).await
+    adjust_stock_inner(pool.inner(), product_id, new_qty, note).await
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -1230,9 +1207,7 @@ pub async fn get_sale(pool: State<'_, SqlitePool>, id: i64) -> AppResult<Sale> {
     load_sale(pool.inner(), id).await
 }
 
-pub async fn close_day_inner(pool: &SqlitePool, pin: Option<&str>) -> AppResult<DayClose> {
-    require_manager_pin(pool, pin).await?;
-
+pub async fn close_day_inner(pool: &SqlitePool) -> AppResult<DayClose> {
     let business_date = today_business_date();
     let (start, end) = day_bounds_iso(&business_date).map_err(AppError::msg)?;
 
@@ -1297,8 +1272,8 @@ pub async fn close_day_inner(pool: &SqlitePool, pin: Option<&str>) -> AppResult<
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub async fn close_day(pool: State<'_, SqlitePool>, pin: Option<String>) -> AppResult<DayClose> {
-    close_day_inner(pool.inner(), pin.as_deref()).await
+pub async fn close_day(pool: State<'_, SqlitePool>) -> AppResult<DayClose> {
+    close_day_inner(pool.inner()).await
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -1342,77 +1317,7 @@ async fn set_setting(pool: &SqlitePool, key: &str, value: &str) -> AppResult<()>
     Ok(())
 }
 
-pub async fn has_manager_pin_inner(pool: &SqlitePool) -> AppResult<bool> {
-    Ok(get_setting(pool, PIN_KEY).await?.is_some())
-}
-
-#[tauri::command(rename_all = "camelCase")]
-pub async fn has_manager_pin(pool: State<'_, SqlitePool>) -> AppResult<bool> {
-    has_manager_pin_inner(pool.inner()).await
-}
-
-pub async fn set_manager_pin_inner(
-    pool: &SqlitePool,
-    old_pin: Option<&str>,
-    new_pin: &str,
-) -> AppResult<()> {
-    let new_pin = new_pin.trim();
-    if new_pin.len() < 4 {
-        return Err(AppError::msg("รหัส PIN ต้องมีอย่างน้อย 4 ตัวอักษ"));
-    }
-    let existing = get_setting(pool, PIN_KEY).await?;
-    match existing {
-        None => {
-            set_setting(pool, PIN_KEY, &hash_pin(new_pin)).await?;
-        }
-        Some(hash) => {
-            let old = old_pin.unwrap_or("").trim();
-            if hash_pin(old) != hash {
-                return Err(AppError::msg("รหัส PIN เดิมไม่ถูกต้อง"));
-            }
-            set_setting(pool, PIN_KEY, &hash_pin(new_pin)).await?;
-        }
-    }
-    Ok(())
-}
-
-#[tauri::command(rename_all = "camelCase")]
-pub async fn set_manager_pin(
-    pool: State<'_, SqlitePool>,
-    old_pin: Option<String>,
-    new_pin: String,
-) -> AppResult<()> {
-    set_manager_pin_inner(pool.inner(), old_pin.as_deref(), &new_pin).await
-}
-
-pub async fn verify_manager_pin_inner(pool: &SqlitePool, pin: &str) -> AppResult<bool> {
-    let Some(hash) = get_setting(pool, PIN_KEY).await? else {
-        return Ok(false);
-    };
-    Ok(hash_pin(pin.trim()) == hash)
-}
-
-#[tauri::command(rename_all = "camelCase")]
-pub async fn verify_manager_pin(pool: State<'_, SqlitePool>, pin: String) -> AppResult<bool> {
-    verify_manager_pin_inner(pool.inner(), &pin).await
-}
-
-async fn require_manager_pin(pool: &SqlitePool, pin: Option<&str>) -> AppResult<()> {
-    let Some(stored) = get_setting(pool, PIN_KEY).await? else {
-        return Err(AppError::msg(
-            "ยังไม่ได้ตั้งรหัสผู้จัดการ — ไปที่รายงานเพื่อตั้ง PIN",
-        ));
-    };
-    let pin = pin.unwrap_or("").trim();
-    if pin.is_empty() || hash_pin(pin) != stored {
-        return Err(AppError::msg("รหัสผู้จัดการไม่ถูกต้อง"));
-    }
-    Ok(())
-}
-
-pub async fn void_sale_inner(pool: &SqlitePool, id: i64, pin: Option<&str>) -> AppResult<Sale> {
-    require_manager_pin(pool, pin).await?;
-
+pub async fn void_sale_inner(pool: &SqlitePool, id: i64) -> AppResult<Sale> {
     let mut tx = map_sqlx(pool.begin().await)?;
     let summary = map_sqlx(
         sqlx::query_as::<_, SaleSummary>(
@@ -1490,12 +1395,8 @@ pub async fn void_sale_inner(pool: &SqlitePool, id: i64, pin: Option<&str>) -> A
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub async fn void_sale(
-    pool: State<'_, SqlitePool>,
-    id: i64,
-    pin: Option<String>,
-) -> AppResult<Sale> {
-    void_sale_inner(pool.inner(), id, pin.as_deref()).await
+pub async fn void_sale(pool: State<'_, SqlitePool>, id: i64) -> AppResult<Sale> {
+    void_sale_inner(pool.inner(), id).await
 }
 
 #[tauri::command(rename_all = "camelCase")]

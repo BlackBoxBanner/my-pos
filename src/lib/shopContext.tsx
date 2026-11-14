@@ -12,7 +12,6 @@ import {
   getShopSettings,
   getLowStockCount,
   getTodayReport,
-  hasManagerPin,
   type ShopSettings,
   type TodayReport,
 } from "../lib/api";
@@ -20,7 +19,6 @@ import {
 type ShopContextValue = {
   isTauri: boolean;
   report: TodayReport | null;
-  hasPin: boolean;
   settings: ShopSettings;
   lowStockCount: number;
   refreshStatus: () => Promise<void>;
@@ -49,20 +47,17 @@ export function isTauriRuntime(): boolean {
 export function ShopProvider({ children }: { children: ReactNode }) {
   const [isTauri] = useState(() => isTauriRuntime());
   const [report, setReport] = useState<TodayReport | null>(null);
-  const [hasPin, setHasPin] = useState(false);
   const [settings, setSettings] = useState<ShopSettings>(defaultSettings);
   const [lowStockCount, setLowStockCount] = useState(0);
 
   const refreshStatus = useCallback(async () => {
     if (!isTauriRuntime()) return;
     try {
-      const [r, pin, lowStock] = await Promise.all([
+      const [r, lowStock] = await Promise.all([
         getTodayReport(),
-        hasManagerPin(),
         getLowStockCount(),
       ]);
       setReport(r);
-      setHasPin(pin);
       setLowStockCount(lowStock);
     } catch {
       /* ignore when not ready */
@@ -87,27 +82,16 @@ export function ShopProvider({ children }: { children: ReactNode }) {
     () => ({
       isTauri,
       report,
-      hasPin,
       settings,
       lowStockCount,
       refreshStatus,
       refreshSettings,
       setTabHint: () => undefined,
     }),
-    [
-      isTauri,
-      report,
-      hasPin,
-      settings,
-      lowStockCount,
-      refreshStatus,
-      refreshSettings,
-    ],
+    [isTauri, report, settings, lowStockCount, refreshStatus, refreshSettings],
   );
 
-  return (
-    <ShopContext.Provider value={value}>{children}</ShopContext.Provider>
-  );
+  return <ShopContext.Provider value={value}>{children}</ShopContext.Provider>;
 }
 
 export function useShop() {

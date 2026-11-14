@@ -2,9 +2,8 @@
 mod tests {
     use crate::commands::{
         adjust_stock_inner, checkout_inner, create_product_inner, delete_product_inner,
-        get_low_stock_count_inner, get_today_report_inner, has_manager_pin_inner,
-        list_products_page_inner, next_receipt_no, receive_stock_inner, set_manager_pin_inner,
-        void_sale_inner,
+        get_low_stock_count_inner, get_today_report_inner, list_products_page_inner,
+        next_receipt_no, receive_stock_inner, void_sale_inner,
     };
     use crate::db::connect_memory_pool;
     use crate::models::{CheckoutLine, CreateProductInput};
@@ -124,11 +123,8 @@ mod tests {
     #[tokio::test]
     async fn close_day_blocks_checkout() {
         let pool = connect_memory_pool().await.unwrap();
-        set_manager_pin_inner(&pool, None, "1234").await.unwrap();
         let id = seed_product(&pool, 5).await;
-        crate::commands::close_day_inner(&pool, Some("1234"))
-            .await
-            .unwrap();
+        crate::commands::close_day_inner(&pool).await.unwrap();
         let err = checkout_inner(
             &pool,
             vec![CheckoutLine {
@@ -145,7 +141,6 @@ mod tests {
     #[tokio::test]
     async fn void_restores_stock_and_excludes_from_totals() {
         let pool = connect_memory_pool().await.unwrap();
-        set_manager_pin_inner(&pool, None, "1234").await.unwrap();
         let id = seed_product(&pool, 10).await;
         let sale = checkout_inner(
             &pool,
@@ -157,9 +152,7 @@ mod tests {
         )
         .await
         .unwrap();
-        void_sale_inner(&pool, sale.id, Some("1234"))
-            .await
-            .unwrap();
+        void_sale_inner(&pool, sale.id).await.unwrap();
         let stock: i64 = sqlx::query_scalar("SELECT stock_qty FROM products WHERE id = ?1")
             .bind(id)
             .fetch_one(&pool)
@@ -172,19 +165,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn pin_set_verify_and_adjust_requires_pin() {
+    async fn adjust_stock_sets_absolute_qty() {
         let pool = connect_memory_pool().await.unwrap();
-        assert!(!has_manager_pin_inner(&pool).await.unwrap());
-        set_manager_pin_inner(&pool, None, "9999").await.unwrap();
-        assert!(has_manager_pin_inner(&pool).await.unwrap());
         let id = seed_product(&pool, 5).await;
-        let err = adjust_stock_inner(&pool, id, 3, None, None)
-            .await
-            .unwrap_err();
-        assert!(err.to_string().contains("รหัส"));
-        adjust_stock_inner(&pool, id, 3, None, Some("9999".into()))
-            .await
-            .unwrap();
+        adjust_stock_inner(&pool, id, 3, None).await.unwrap();
         let stock: i64 = sqlx::query_scalar("SELECT stock_qty FROM products WHERE id = ?1")
             .bind(id)
             .fetch_one(&pool)
@@ -196,9 +180,8 @@ mod tests {
     #[tokio::test]
     async fn delete_product_removes_row_and_movements() {
         let pool = connect_memory_pool().await.unwrap();
-        set_manager_pin_inner(&pool, None, "1234").await.unwrap();
         let id = seed_product(&pool, 4).await;
-        delete_product_inner(&pool, id, Some("1234")).await.unwrap();
+        delete_product_inner(&pool, id).await.unwrap();
         let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM products WHERE id = ?1")
             .bind(id)
             .fetch_one(&pool)
@@ -218,7 +201,6 @@ mod tests {
     #[tokio::test]
     async fn delete_product_rejects_when_sold_before() {
         let pool = connect_memory_pool().await.unwrap();
-        set_manager_pin_inner(&pool, None, "1234").await.unwrap();
         let id = seed_product(&pool, 5).await;
         checkout_inner(
             &pool,
@@ -230,9 +212,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let err = delete_product_inner(&pool, id, Some("1234"))
-            .await
-            .unwrap_err();
+        let err = delete_product_inner(&pool, id).await.unwrap_err();
         assert!(err.to_string().contains("ขาย"));
     }
 

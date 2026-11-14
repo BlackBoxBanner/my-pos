@@ -23,7 +23,6 @@ import { SearchField } from "../components/ui/SearchField";
 import { Select } from "../components/ui/Select";
 import { Modal } from "../components/ui/Modal";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
-import { PinModal } from "../components/PinModal";
 import { EditableProductsTable } from "../components/EditableProductsTable";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import { useProductRowAutoSave } from "../hooks/useProductRowAutoSave";
@@ -57,7 +56,6 @@ type Props = {
 export function ProductsPage({ initialBarcode, onConsumedBarcode }: Props) {
   const { refreshStatus } = useShop();
   const [deleteTarget, setDeleteTarget] = useState<Product | null>(null);
-  const [pinDeleteOpen, setPinDeleteOpen] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
   const [totalProducts, setTotalProducts] = useState(0);
   const [query, setQuery] = useState("");
@@ -97,10 +95,7 @@ export function ProductsPage({ initialBarcode, onConsumedBarcode }: Props) {
           pageSize,
           pageIndex * pageSize,
         );
-        const lastPage = Math.max(
-          0,
-          Math.ceil(result.total / pageSize) - 1,
-        );
+        const lastPage = Math.max(0, Math.ceil(result.total / pageSize) - 1);
         if (result.total > 0 && pageIndex > lastPage) {
           setPage(lastPage);
           return;
@@ -312,21 +307,19 @@ export function ProductsPage({ initialBarcode, onConsumedBarcode }: Props) {
     setDeleteTarget(p);
   };
 
-  const performDelete = async (pin: string) => {
+  const performDelete = async () => {
     if (!deleteTarget || busyRef.current) return;
     busyRef.current = true;
     setBusy(true);
     setError(null);
     try {
-      await deleteProduct(deleteTarget.id, pin);
-      setPinDeleteOpen(false);
+      await deleteProduct(deleteTarget.id);
       setDeleteTarget(null);
       setShowForm(false);
       setEditing(null);
       await load();
     } catch (e) {
       setError(errorMessage(e));
-      throw e;
     } finally {
       busyRef.current = false;
       setBusy(false);
@@ -617,27 +610,15 @@ export function ProductsPage({ initialBarcode, onConsumedBarcode }: Props) {
         </Modal>
       )}
 
-      {deleteTarget && !pinDeleteOpen && (
+      {deleteTarget && (
         <ConfirmDialog
           title="ลบสินค้า"
           message={`ลบ “${deleteTarget.name}” ถาวร? ไม่สามารถกู้คืนได้ หากเคยขายแล้วระบบจะไม่อนุญาต — ให้ปิดการขายแทน`}
-          confirmLabel="ใส่ PIN เพื่อลบ"
+          confirmLabel="ลบ"
           danger
           busy={busy}
           onCancel={() => setDeleteTarget(null)}
-          onConfirm={() => setPinDeleteOpen(true)}
-        />
-      )}
-
-      {pinDeleteOpen && deleteTarget && (
-        <PinModal
-          title="ยืนยันลบสินค้า"
-          message={`ลบ “${deleteTarget.name}” ถาวร`}
-          onCancel={() => {
-            setPinDeleteOpen(false);
-            setDeleteTarget(null);
-          }}
-          onConfirm={performDelete}
+          onConfirm={() => void performDelete()}
         />
       )}
     </div>

@@ -90,7 +90,9 @@ export function SettingsUpdateSection({ active, isTauri }: Props) {
         </div>
       )}
       {state.status === "downloading" && (
-        <p className="text-sm text-slate-500">กำลังดาวน์โหลดและติดตั้ง… แอปจะเริ่มใหม่</p>
+        <p className="text-sm text-slate-500">
+          กำลังดาวน์โหลดและติดตั้ง… แอปจะเริ่มใหม่
+        </p>
       )}
       {state.status === "error" && (
         <p className="text-sm text-red-600" role="alert">
@@ -101,22 +103,22 @@ export function SettingsUpdateSection({ active, isTauri }: Props) {
       <div className="flex flex-wrap gap-2">
         <Button
           variant="secondary"
-          disabled={state.status === "checking" || state.status === "downloading"}
+          disabled={
+            state.status === "checking" || state.status === "downloading"
+          }
           onClick={() => void runCheck()}
         >
           {state.status === "checking" ? "กำลังตรวจสอบ…" : "ตรวจสอบอัปเดต"}
         </Button>
         {state.status === "available" && pendingUpdate && (
-          <Button
-            variant="primary"
-            onClick={() => void runInstall()}
-          >
+          <Button variant="primary" onClick={() => void runInstall()}>
             ดาวน์โหลดและติดตั้ง
           </Button>
         )}
       </div>
       <p className="text-xs text-slate-500">
-        อัปเดตจาก GitHub Releases — ต้องลงชื่อแพ็กเกจ (signing) ใน CI ก่อนใช้งานจริง
+        อัปเดตจาก GitHub Releases (latest.json) —
+        แอปจะดาวน์โหลดและติดตั้งเวอร์ชันใหม่แล้วเริ่มใหม่
       </p>
     </section>
   );

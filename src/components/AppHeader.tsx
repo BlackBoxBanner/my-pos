@@ -49,6 +49,13 @@ export function AppHeader({
       )}
       <div className="flex min-h-14 flex-wrap items-center gap-2 px-4 py-2">
         <div className="flex min-w-0 flex-1 items-center gap-2">
+          <img
+            src="/logo.svg"
+            alt=""
+            width={32}
+            height={32}
+            className="size-8 shrink-0 rounded-lg"
+          />
           <div className="shrink-0 text-base font-bold tracking-wide text-slate-900">
             My POS
           </div>

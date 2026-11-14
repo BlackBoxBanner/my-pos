@@ -1,7 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { AppHeader, type AppTab } from "./components/AppHeader";
 import { CheatsheetModal } from "./components/CheatsheetModal";
-import { OnboardingWizard } from "./components/OnboardingWizard";
 import { ShopProvider, useShop } from "./lib/shopContext";
 import {
   readUiZoom,
@@ -30,19 +29,12 @@ function AppInner() {
   const [tab, setTab] = useState<AppTab>("sell");
   const [pendingBarcode, setPendingBarcode] = useState<string | null>(null);
   const [cheatsheet, setCheatsheet] = useState(false);
-  const [showOnboarding, setShowOnboarding] = useState(false);
   const [zoom, setZoom] = useState(() => readUiZoom());
-  const { report, lowStockCount, isTauri, settings, refreshStatus } = useShop();
+  const { report, lowStockCount, isTauri, refreshStatus } = useShop();
 
   const changeZoom = useCallback((percent: number) => {
     setZoom(setUiZoom(percent));
   }, []);
-
-  useEffect(() => {
-    if (isTauri && settings && !settings.onboardingDone) {
-      setShowOnboarding(true);
-    }
-  }, [isTauri, settings]);
 
   useEffect(() => {
     let wheelAcc = 0;
@@ -166,15 +158,6 @@ function AppInner() {
       </main>
 
       {cheatsheet && <CheatsheetModal onClose={() => setCheatsheet(false)} />}
-      {showOnboarding && (
-        <OnboardingWizard
-          onDone={() => setShowOnboarding(false)}
-          onGoImport={() => {
-            setShowOnboarding(false);
-            setTab("products");
-          }}
-        />
-      )}
     </div>
   );
 }

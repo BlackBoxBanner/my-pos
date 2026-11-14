@@ -8,22 +8,12 @@ Desktop point-of-sale for a local shop. Built with Tauri 2, React, TypeScript, a
 - Qty-prefix scan (`3*barcode`), denomination buttons, optional sounds / auto-print
 - Product catalog with CSV import preview, export, pagination, quick price edit, and **pin to sell screen**
 - Stock receive / adjust with searchable product picker and low-stock filter
-- Reports (today + day close) and **Settings** (shop name, PIN, backup, app version & updates)
-- First-run onboarding; manager PIN for adjust / close / void
+- Reports (today + day close) and **Settings** (shop name, backup, app version & updates)
 - Database backup to `backups/` under the app data directory
 
 ## Business day
 
 Sales, reports, receipt numbers, and day close use **Asia/Bangkok** calendar dates.
-
-## Manager PIN
-
-Set once from **รายงาน → ตั้งรหัสผู้จัดการ**. Required for:
-
-- Stock adjust
-- Day close
-- Void sale
-- Changing the PIN
 
 ## Data location
 
@@ -68,11 +58,11 @@ npm run tauri build
 
 Local bundle output (under `src-tauri/target/release/bundle/`):
 
-| OS | Installers |
-| --- | --- |
-| macOS | `.dmg`, `.app.tar.gz` |
+| OS      | Installers                      |
+| ------- | ------------------------------- |
+| macOS   | `.dmg`, `.app.tar.gz`           |
 | Windows | NSIS `*-setup.exe`, WiX `*.msi` |
-| Linux | `.deb`, `.AppImage`, `.rpm` |
+| Linux   | `.deb`, `.AppImage`, `.rpm`     |
 
 ## Releases (GitHub Actions)
 
@@ -80,44 +70,45 @@ CI builds the same bundles on every **published** GitHub Release, on pushes to t
 
 ### Cut a release
 
-1. Bump `version` in `package.json` and `src-tauri/tauri.conf.json` (and `src-tauri/Cargo.toml` if you keep them in sync).
-2. Commit, then create and push an annotated tag: `git tag v0.1.0 && git push origin v0.1.0`.
-3. On GitHub: **Releases → Draft a new release**, choose that tag, add release notes, and **Publish release** (publishing also triggers the workflow if the tag push already ran — prefer creating the GitHub release first or pushing the tag once to avoid duplicate runs).
-4. Wait for the [Release](.github/workflows/release.yml) workflow. Assets appear on the release page when all matrix jobs finish (macOS Apple Silicon, macOS Intel, Linux, Windows).
+1. Bump `version` in `package.json`, `src-tauri/tauri.conf.json`, and `src-tauri/Cargo.toml` (keep `Cargo.lock` in sync for the `my-pos` package).
+2. Commit, then create and push **one** annotated tag: `git tag v0.1.2 && git push origin v0.1.2`.
+3. Wait for the [Release](.github/workflows/release.yml) workflow (triggered by the tag). Do **not** also start the workflow by hand for the same tag while that run is in progress.
+4. When the matrix and the `updater-manifest` job finish, the release has installers, `.sig` files, and `latest.json` with `darwin-aarch64`, `darwin-x86_64`, `windows-x86_64`, and `linux-x86_64`.
 
 ### Secrets and signing
 
 - **`GITHUB_TOKEN`**: Provided automatically. The workflow needs **Settings → Actions → General → Workflow permissions → Read and write permissions** so assets can be uploaded to releases.
-- **In-app updater (required for auto-update in Settings → อัปเดต)**:
-  1. Generate a minisign keypair: `npm run tauri signer generate -w ~/.tauri/my-pos.key`
-  2. Put the **public** key (contents of `~/.tauri/my-pos.key.pub`) in `src-tauri/tauri.conf.json` → `plugins.updater.pubkey`. Keep the private key secret.
-  3. Add GitHub Actions secrets: `TAURI_SIGNING_PRIVATE_KEY` (file contents or path per [Tauri signer docs](https://v2.tauri.app/reference/cli/#signer)) and optionally `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
-  4. Ensure `plugins.updater.endpoints` points at your repo: `https://github.com/<owner>/<repo>/releases/latest/download/latest.json`
-  5. On publish, the [Release](.github/workflows/release.yml) workflow uploads signed bundles and `latest.json` when the signing secret is set (`uploadUpdaterJson: true`).
+- **In-app updater (required for Settings → อัปเดต)**:
+  1. Generate a minisign keypair **outside the repo**: `npm run tauri signer generate -w ~/.tauri/my-pos.key` (passwordless for CI is fine).
+  2. Put the **public** key (contents of `~/.tauri/my-pos.key.pub`) in `src-tauri/tauri.conf.json` → `plugins.updater.pubkey`. Never commit the private key.
+  3. Set the GitHub Actions secret `TAURI_SIGNING_PRIVATE_KEY` to the **contents** of `~/.tauri/my-pos.key` (not a path). Add `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` only if the key has a password.
+  4. Keep `plugins.updater.endpoints` pointing at `https://github.com/BlackBoxBanner/my-pos/releases/latest/download/latest.json`.
+  5. On a `v*` tag, [Release](.github/workflows/release.yml) requires that secret, uploads signed bundles + `.sig` files from each platform, then a single `updater-manifest` job builds and uploads `latest.json` via [`scripts/build-latest-json.mjs`](scripts/build-latest-json.mjs) (avoids parallel-matrix races). Verify with `npm run test:updater-json`.
+  6. Changing the public key means existing installs that still embed the old key cannot verify new updates — they need one manual install of a build that contains the new pubkey.
 - **Code signing (optional)**: Not configured in this repo. Unsigned macOS builds may show Gatekeeper warnings; Windows SmartScreen may warn until the app is signed. To sign in CI, add repository secrets such as `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `KEYCHAIN_PASSWORD`, and Windows signing vars per [Tauri’s GitHub pipeline docs](https://v2.tauri.app/distribute/pipelines/github/).
 
 ### App version & updates (in the app)
 
-Open **ตั้งค่า** → **อัปเดต** to see the current version (`เวอร์ชัน`) and **ตรวจสอบอัปเดต** / **ดาวน์โหลดและติดตั้ง**. Dev builds (`npm run tauri dev`) can check the UI; downloading updates only works in signed release builds with `latest.json` on GitHub.
+Open **ตั้งค่า** → **อัปเดต** to see the current version (`เวอร์ชัน`) and **ตรวจสอบอัปเดต** / **ดาวน์โหลดและติดตั้ง**. The app downloads the newer signed package from GitHub Releases, installs it, and relaunches. Dev builds (`npm run tauri dev`) can exercise the check UI; installing updates needs a release build that was signed with the same private key as `plugins.updater.pubkey`.
 
 ### Release troubleshooting
 
-| Symptom | Cause | What to do |
-| --- | --- | --- |
-| Workflow ends in **startup_failure** (~1s), **no jobs**, or annotation: *account is locked due to a billing issue* | GitHub Actions billing on the account is unpaid or over limit | Open [Billing settings](https://github.com/settings/billing) (or org billing if the repo is under an org). Pay outstanding balance or raise spending limit, then **Actions → Release → Run workflow** with tag `v0.1.0-beta.2` (or your release tag). |
-| Same, message about **workflow file issue** on very early runs | Invalid workflow expression (e.g. `inputs.tag` instead of `github.event.inputs.tag`) | Fixed on `main` since `0c66b12`; pull latest `main` and re-run. |
-| Workflow is green but release has **no assets** | Jobs failed on one matrix leg, or upload permissions | Check each matrix job log; set **Settings → Actions → General → Workflow permissions → Read and write**. |
-| Builds fail at **signing** / `latest.json` | `createUpdaterArtifacts` is on but `TAURI_SIGNING_PRIVATE_KEY` is missing | Add signing secrets (see above) or temporarily set `bundle.createUpdaterArtifacts` to `false` for unsigned installer-only releases. |
+| Symptom                                                                                                            | Cause                                                                                | What to do                                                                                                                                                                                                                                            |
+| ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Workflow ends in **startup_failure** (~1s), **no jobs**, or annotation: _account is locked due to a billing issue_ | GitHub Actions billing on the account is unpaid or over limit                        | Open [Billing settings](https://github.com/settings/billing) (or org billing if the repo is under an org). Pay outstanding balance or raise spending limit, then **Actions → Release → Run workflow** with tag `v0.1.0-beta.2` (or your release tag). |
+| Same, message about **workflow file issue** on very early runs                                                     | Invalid workflow expression (e.g. `inputs.tag` instead of `github.event.inputs.tag`) | Fixed on `main` since `0c66b12`; pull latest `main` and re-run.                                                                                                                                                                                       |
+| Workflow is green but release has **no assets**                                                                    | Jobs failed on one matrix leg, or upload permissions                                 | Check each matrix job log; set **Settings → Actions → General → Workflow permissions → Read and write**.                                                                                                                                              |
+| Builds fail at **Require updater signing key** / signing                                                           | `TAURI_SIGNING_PRIVATE_KEY` is missing                                               | Add the secret (file contents of `~/.tauri/my-pos.key`). The Release workflow no longer builds unsigned updater artifacts.                                                                                                                            |
+| Release has installers but **no `latest.json`**                                                                    | `updater-manifest` job failed or a platform `.sig` was missing                       | Open the `updater-manifest` job log; ensure all four platforms uploaded `.sig` files, then re-run that job or the whole workflow.                                                                                                                     |
+| In-app update rejects the download / signature                                                                     | App pubkey does not match the key that signed the release                            | Install the newest build once by hand (pubkey rotation), or restore the private key that matches the pubkey already in that install.                                                                                                                  |
 
-**Private repo note:** `BlackBoxBanner/my-pos` is private, so Actions minutes count against your plan (macOS/Windows runners use more minutes). After billing is healthy, re-run without creating a new tag:
+**Public repo:** `BlackBoxBanner/my-pos` is public; standard GitHub Actions runners for public repos do not use private-repo metered minutes the same way. After a failed tag run, you can re-run without a new tag:
 
 ```bash
-gh workflow run release.yml -f tag=v0.1.0-beta.2
+gh workflow run release.yml -f tag=v0.1.2
 ```
 
-**Manual fallback (no CI):** On a machine with Rust + Node, run `npm ci && npm run tauri build`, then upload files from `src-tauri/target/release/bundle/` to the GitHub release page.
-
-**Public repo (optional):** Public repositories get a larger free Actions allowance on standard Linux runners (policy varies; macOS/Windows still bill). Do not change visibility unless you accept the repo being public.
+**Manual fallback (no CI):** On a machine with Rust + Node and `TAURI_SIGNING_PRIVATE_KEY` set, run `npm ci && npm run tauri build`, then upload files from `src-tauri/target/release/bundle/` (including `.sig`) and generate `latest.json` with `node scripts/build-latest-json.mjs`.
 
 ## Windows installers without cost ($0)
 
@@ -125,12 +116,12 @@ You need a **Windows** runner to produce NSIS (`*-setup.exe`) and WiX (`*.msi`).
 
 ### Option A — GitHub Actions (best if billing works)
 
-| Repo visibility | Cost | Windows job |
-| --- | --- | --- |
-| **Public** | **$0** — standard `windows-latest` minutes are free on public repos | [.github/workflows/release-windows-only.yml](.github/workflows/release-windows-only.yml) |
-| **Private** | **$0** within included compute (~2,000 min/month on GitHub Free; Windows minutes use a **multiplier**, so budget accordingly) | Same workflow, or full [Release](.github/workflows/release.yml) matrix |
+| Repo visibility | Cost                                                                                                                          | Windows job                                                                              |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| **Public**      | **$0** — standard `windows-latest` minutes are free on public repos                                                           | [.github/workflows/release-windows-only.yml](.github/workflows/release-windows-only.yml) |
+| **Private**     | **$0** within included compute (~2,000 min/month on GitHub Free; Windows minutes use a **multiplier**, so budget accordingly) | Same workflow, or full [Release](.github/workflows/release.yml) matrix                   |
 
-**Account billing lock** (*account is locked due to a billing issue*, jobs show **startup_failure** ~1s):
+**Account billing lock** (_account is locked due to a billing issue_, jobs show **startup_failure** ~1s):
 
 1. Open **Settings → Billing and licensing** ([billing settings](https://github.com/settings/billing)).
 2. Typical fixes at **$0 spend**:
@@ -141,11 +132,11 @@ You need a **Windows** runner to produce NSIS (`*-setup.exe`) and WiX (`*.msi`).
 **After Actions work again:**
 
 1. **Settings → Actions → General → Workflow permissions → Read and write permissions**.
-2. Push a tag `v*` or run **Actions → Release (Windows only) → Run workflow** (optional tag; uncheck *upload to release* to only get workflow artifacts).
-3. Installers use [src-tauri/tauri.ci-windows.json](src-tauri/tauri.ci-windows.json): **NSIS + MSI only**, `createUpdaterArtifacts: false` unless `TAURI_SIGNING_PRIVATE_KEY` is set.
+2. Push a tag `v*` or run **Actions → Release (Windows only) → Run workflow** (optional tag; uncheck _upload to release_ to only get workflow artifacts).
+3. Installers use [src-tauri/tauri.ci-windows.json](src-tauri/tauri.ci-windows.json): **NSIS + MSI only**, `createUpdaterArtifacts: false` unless `TAURI_SIGNING_PRIVATE_KEY` is set. This workflow is **manual only** (`workflow_dispatch`) and does **not** publish `latest.json` — use the main [Release](.github/workflows/release.yml) workflow for in-app updates.
 
 ```bash
-gh workflow run "Release (Windows only)" -f tag=v0.1.0 -f upload_to_release=true
+gh workflow run "Release (Windows only)" -f tag=v0.1.2 -f upload_to_release=true
 ```
 
 Download from the **Release** assets (if uploaded) or the workflow **Artifacts** tab.
@@ -175,7 +166,7 @@ Optional **variable group** (Pipelines → Library): `TAURI_SIGNING_PRIVATE_KEY`
 
 ### Limitations (all $0 paths)
 
-- Installers are **unsigned** unless you add signing secrets; Windows SmartScreen may warn.
-- Without `TAURI_SIGNING_PRIVATE_KEY`, in-app auto-update files (`latest.json`, `.sig`) are **not** produced in these CI jobs (`createUpdaterArtifacts: false`).
+- Installers are **unsigned** (OS code-signing) unless you add Apple/Windows signing secrets; Windows SmartScreen may warn.
+- The Windows-only and Azure paths do **not** publish `latest.json`. In-app auto-update comes from the main Release workflow (signed `.sig` + `updater-manifest`).
 - Azure free tier: single job **≤ 60 minutes**; first Tauri Windows build can be slow — enable pipeline caching later if you hit the limit.
-- Full macOS/Linux matrix still needs GitHub Actions minutes or separate machines; this section is **Windows-only**.
+- Full macOS/Linux matrix still needs GitHub Actions or separate machines; this section is **Windows-only**.

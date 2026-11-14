@@ -14,14 +14,13 @@ import { formatBaht } from "../lib/money";
 import { formatTime } from "../lib/datetime";
 import { useShop } from "../lib/shopContext";
 import { ReceiptModal } from "../components/ReceiptModal";
-import { PinModal } from "../components/PinModal";
 import { Alert } from "../components/ui/Alert";
 import { Button } from "../components/ui/Button";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { StatCard } from "../components/ui/StatCard";
 
 export function ReportsPage({ active }: { active?: boolean }) {
-  const { hasPin, settings, refreshStatus } = useShop();
+  const { settings, refreshStatus } = useShop();
   const [report, setReport] = useState<TodayReport | null>(null);
   const [closes, setCloses] = useState<DayClose[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -29,7 +28,6 @@ export function ReportsPage({ active }: { active?: boolean }) {
   const busyRef = useRef(false);
   const [receipt, setReceipt] = useState<Sale | null>(null);
   const [closeMsg, setCloseMsg] = useState<string | null>(null);
-  const [pinMode, setPinMode] = useState<null | "close" | "void">(null);
   const [voidTargetId, setVoidTargetId] = useState<number | null>(null);
   const [confirmClose, setConfirmClose] = useState(false);
 
@@ -49,23 +47,21 @@ export function ReportsPage({ active }: { active?: boolean }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);
 
-  const handleCloseDay = async (pin: string) => {
+  const handleCloseDay = async () => {
     if (busyRef.current) return;
     busyRef.current = true;
     setBusy(true);
     setError(null);
     setCloseMsg(null);
     try {
-      const result = await closeDay(pin);
+      const result = await closeDay();
       setCloseMsg(
         `ปิดยอดวันที่ ${result.businessDate} แล้ว — ${result.saleCount} บิล รวม ${formatBaht(result.totalSatang)}`,
       );
-      setPinMode(null);
       setConfirmClose(false);
       await load();
     } catch (e) {
       setError(errorMessage(e));
-      throw e;
     } finally {
       busyRef.current = false;
       setBusy(false);
@@ -80,13 +76,22 @@ export function ReportsPage({ active }: { active?: boolean }) {
     }
   };
 
-  const handleVoid = async (pin: string) => {
-    if (voidTargetId == null) return;
-    const sale = await voidSale(voidTargetId, pin);
-    setReceipt(sale);
-    setPinMode(null);
-    setVoidTargetId(null);
-    await load();
+  const handleVoid = async () => {
+    if (voidTargetId == null || busyRef.current) return;
+    busyRef.current = true;
+    setBusy(true);
+    setError(null);
+    try {
+      const sale = await voidSale(voidTargetId);
+      setReceipt(sale);
+      setVoidTargetId(null);
+      await load();
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
   };
 
   return (
@@ -111,15 +116,14 @@ export function ReportsPage({ active }: { active?: boolean }) {
 
       {report?.dayClosed && (
         <Alert tone="warning">
-          ปิดยอดวันนี้แล้ว — ไม่สามารถขายเพิ่มได้ (อัปเดตยอดปิดซ้ำได้ด้วย PIN)
+          ปิดยอดวันนี้แล้ว — ไม่สามารถขายเพิ่มได้ (อัปเดตยอดปิดซ้ำได้)
         </Alert>
       )}
 
       <div className="flex flex-wrap items-center gap-3">
         <Button
           variant="primary"
-          disabled={busy || !hasPin}
-          title={!hasPin ? "ตั้ง PIN ที่แท็บตั้งค่าก่อน" : undefined}
+          disabled={busy}
           onClick={() => setConfirmClose(true)}
         >
           ปิดยอดวันนี้
@@ -127,11 +131,6 @@ export function ReportsPage({ active }: { active?: boolean }) {
         <Button variant="secondary" onClick={() => void load()}>
           รีเฟรช
         </Button>
-        {!hasPin && (
-          <p className="text-xs text-amber-700">
-            ตั้งรหัสผู้จัดการที่แท็บตั้งค่าก่อนปิดยอด / ยกเลิกบิล
-          </p>
-        )}
       </div>
 
       <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-2">
@@ -205,10 +204,7 @@ export function ReportsPage({ active }: { active?: boolean }) {
                         <button
                           type="button"
                           className="text-xs text-red-600 hover:underline"
-                          onClick={() => {
-                            setVoidTargetId(s.id);
-                            setPinMode("void");
-                          }}
+                          onClick={() => setVoidTargetId(s.id)}
                         >
                           ยกเลิก
                         </button>
@@ -269,10 +265,7 @@ export function ReportsPage({ active }: { active?: boolean }) {
           onNewSale={() => setReceipt(null)}
           onVoid={
             receipt.status !== "voided"
-              ? () => {
-                  setVoidTargetId(receipt.id);
-                  setPinMode("void");
-                }
+              ? () => setVoidTargetId(receipt.id)
               : undefined
           }
         />
@@ -282,33 +275,22 @@ export function ReportsPage({ active }: { active?: boolean }) {
         <ConfirmDialog
           title="ยืนยันปิดยอดวันนี้"
           message={`ปิดยอดวันที่ ${report.businessDate} — ${report.saleCount} บิล รวม ${formatBaht(report.totalSatang)} แล้วล็อกการขายวันนี้?`}
-          confirmLabel="ไปใส่ PIN"
+          confirmLabel="ปิดยอด"
+          busy={busy}
           onCancel={() => setConfirmClose(false)}
-          onConfirm={() => {
-            setConfirmClose(false);
-            setPinMode("close");
-          }}
+          onConfirm={() => void handleCloseDay()}
         />
       )}
 
-      {pinMode === "close" && (
-        <PinModal
-          title="ปิดยอดวันนี้"
-          message="กรอกรหัสผู้จัดการเพื่อปิดยอดและล็อกการขาย"
-          onCancel={() => setPinMode(null)}
-          onConfirm={handleCloseDay}
-        />
-      )}
-
-      {pinMode === "void" && (
-        <PinModal
+      {voidTargetId != null && (
+        <ConfirmDialog
           title="ยกเลิกใบเสร็จ"
           message="จะคืนสต็อกทั้งหมดของบิลนี้"
-          onCancel={() => {
-            setPinMode(null);
-            setVoidTargetId(null);
-          }}
-          onConfirm={handleVoid}
+          confirmLabel="ยกเลิกบิล"
+          danger
+          busy={busy}
+          onCancel={() => setVoidTargetId(null)}
+          onConfirm={() => void handleVoid()}
         />
       )}
     </div>

@@ -1,5 +1,5 @@
 # Windows-only installers (NSIS .exe + WiX .msi) — uses fewer Actions minutes than the full Release matrix.
-# Use when billing is healthy, or when the repo is public (standard runners are free on public repos).
+# Manual only: do not run on version tags (the main Release workflow owns tagged releases + latest.json).
 # See README § "Windows installers without cost" for billing lock + Azure Pipelines fallback.
 name: Release (Windows only)
 
@@ -7,17 +7,14 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag (e.g. v0.1.0). Create the tag on GitHub first, or leave empty to only upload workflow artifacts.'
+        description: "Release tag (e.g. v0.1.0). Create the tag on GitHub first, or leave empty to only upload workflow artifacts."
         required: false
         type: string
       upload_to_release:
-        description: 'Attach installers to the GitHub Release for this tag (requires tag + write permissions)'
+        description: "Attach installers to the GitHub Release for this tag (requires tag + write permissions)"
         required: false
         type: boolean
         default: true
-  push:
-    tags:
-      - 'v*'
 
 concurrency:
   group: tauri-release-windows-${{ github.workflow }}-${{ github.ref }}
@@ -53,10 +50,8 @@ jobs:
         shell: bash
         env:
           HAS_SIGNING_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
-          EVENT_NAME: ${{ github.event_name }}
           INPUT_TAG: ${{ github.event.inputs.tag }}
           INPUT_UPLOAD: ${{ github.event.inputs.upload_to_release }}
-          REF_NAME: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           ARGS="--config src-tauri/tauri.ci-windows.json"
@@ -64,14 +59,11 @@ jobs:
             ARGS="--config src-tauri/tauri.ci-windows.json --config '{\"bundle\":{\"createUpdaterArtifacts\":true}}'"
           fi
           echo "args=$ARGS" >> "$GITHUB_OUTPUT"
-          TAG="$REF_NAME"
+          TAG=""
           if [ -n "$INPUT_TAG" ]; then
             TAG="$INPUT_TAG"
           fi
-          if [ "$EVENT_NAME" = "push" ] && [[ "$REF_NAME" == v* ]]; then
-            echo "upload_release=true" >> "$GITHUB_OUTPUT"
-            echo "tag_name=$REF_NAME" >> "$GITHUB_OUTPUT"
-          elif [ "$INPUT_UPLOAD" = "true" ] && [ -n "$TAG" ] && [[ "$TAG" == v* ]]; then
+          if [ "$INPUT_UPLOAD" = "true" ] && [ -n "$TAG" ] && [[ "$TAG" == v* ]]; then
             echo "upload_release=true" >> "$GITHUB_OUTPUT"
             echo "tag_name=$TAG" >> "$GITHUB_OUTPUT"
           else
@@ -98,7 +90,10 @@ jobs:
             | `*.msi` | WiX MSI installer |
 
             Built by [Release (Windows only)](.github/workflows/release-windows-only.yml).
-          uploadUpdaterJson: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
+
+            This workflow does **not** publish `latest.json`. Use the main Release workflow for in-app updates.
+          # Never own latest.json — the full Release matrix + updater-manifest job does.
+          uploadUpdaterJson: false
           args: ${{ steps.build.outputs.args }}
 
       - name: Build installers (artifacts only)

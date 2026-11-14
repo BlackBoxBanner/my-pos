@@ -167,8 +167,8 @@ export function updateProduct(
   return invoke("update_product", { id, input });
 }
 
-export function deleteProduct(id: number, pin?: string): Promise<void> {
-  return invoke("delete_product", { id, pin: pin ?? null });
+export function deleteProduct(id: number): Promise<void> {
+  return invoke("delete_product", { id });
 }
 
 export function setProductPinned(
@@ -194,13 +194,11 @@ export function adjustStock(
   productId: number,
   newQty: number,
   note?: string,
-  pin?: string,
 ): Promise<Product> {
   return invoke("adjust_stock", {
     productId,
     newQty,
     note: note ?? null,
-    pin: pin ?? null,
   });
 }
 
@@ -223,31 +221,16 @@ export function getSale(id: number): Promise<Sale> {
   return invoke("get_sale", { id });
 }
 
-export function closeDay(pin?: string): Promise<DayClose> {
-  return invoke("close_day", { pin: pin ?? null });
+export function closeDay(): Promise<DayClose> {
+  return invoke("close_day");
 }
 
 export function listDayCloses(): Promise<DayClose[]> {
   return invoke("list_day_closes");
 }
 
-export function hasManagerPin(): Promise<boolean> {
-  return invoke("has_manager_pin");
-}
-
-export function setManagerPin(newPin: string, oldPin?: string): Promise<void> {
-  return invoke("set_manager_pin", {
-    newPin,
-    oldPin: oldPin ?? null,
-  });
-}
-
-export function verifyManagerPin(pin: string): Promise<boolean> {
-  return invoke("verify_manager_pin", { pin });
-}
-
-export function voidSale(id: number, pin?: string): Promise<Sale> {
-  return invoke("void_sale", { id, pin: pin ?? null });
+export function voidSale(id: number): Promise<Sale> {
+  return invoke("void_sale", { id });
 }
 
 export function backupDatabase(): Promise<string> {
@@ -262,15 +245,11 @@ export function getShopSettings(): Promise<ShopSettings> {
   return invoke("get_shop_settings");
 }
 
-export function setShopSettings(
-  settings: ShopSettings,
-): Promise<ShopSettings> {
+export function setShopSettings(settings: ShopSettings): Promise<ShopSettings> {
   return invoke("set_shop_settings", { settings });
 }
 
-export function exportProductsCsv(
-  includeInactive = true,
-): Promise<string> {
+export function exportProductsCsv(includeInactive = true): Promise<string> {
   return invoke("export_products_csv", { includeInactive });
 }
 

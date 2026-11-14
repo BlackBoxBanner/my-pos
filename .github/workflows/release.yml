@@ -3,15 +3,13 @@
 name: Release
 
 on:
-  release:
-    types: [published]
   push:
     tags:
       - "v*"
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag to build for (e.g. v0.1.0). Create the tag on GitHub first."
+        description: "Release tag to build for (e.g. v0.1.2). Create the tag on GitHub first."
         required: true
         type: string
 
@@ -44,6 +42,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Require updater signing key
+        shell: bash
+        env:
+          HAS_SIGNING_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
+        run: |
+          set -euo pipefail
+          if [ "$HAS_SIGNING_KEY" != "true" ]; then
+            echo "::error::TAURI_SIGNING_PRIVATE_KEY is required for Release builds (signed updater artifacts)."
+            exit 1
+          fi
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -69,25 +78,6 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      # Updater artifacts require TAURI_SIGNING_PRIVATE_KEY. Without it, Tauri fails the
-      # bundle step ("public key has been found, but no private key"). Unsigned installers
-      # still upload; latest.json is only produced when the secret is set.
-      - name: Resolve build args
-        id: build
-        shell: bash
-        env:
-          HAS_SIGNING_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
-          BASE_ARGS: ${{ matrix.args }}
-        run: |
-          set -euo pipefail
-          if [ "$HAS_SIGNING_KEY" = "true" ]; then
-            printf 'args=%s\n' "$BASE_ARGS" >> "$GITHUB_OUTPUT"
-          elif [ -n "$BASE_ARGS" ]; then
-            printf 'args=%s --config src-tauri/tauri.ci-unsigned.json\n' "$BASE_ARGS" >> "$GITHUB_OUTPUT"
-          else
-            printf 'args=--config src-tauri/tauri.ci-unsigned.json\n' >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Build and upload release assets
         uses: tauri-apps/tauri-action@v1
         env:
@@ -95,8 +85,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: ${{ github.event.inputs.tag || github.event.release.tag_name || github.ref_name }}
-          releaseId: ${{ github.event.release.id || '' }}
+          tagName: ${{ github.event.inputs.tag || github.ref_name }}
           releaseName: My POS release
           releaseBody: |
             Desktop installers for **My POS**.
@@ -108,6 +97,60 @@ jobs:
             | Windows | NSIS `.exe` setup, WiX `.msi` |
             | Linux | `.deb`, `.AppImage`, `.rpm` |
 
-            In-app updates use `latest.json` on this release when `TAURI_SIGNING_PRIVATE_KEY` is configured.
-          uploadUpdaterJson: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
-          args: ${{ steps.build.outputs.args }}
+            In-app updates use `latest.json` on this release (assembled after all platforms finish).
+          # Parallel matrix legs must not race on latest.json; a follow-up job writes it once.
+          uploadUpdaterJson: false
+          updaterJsonPreferNsis: true
+          args: ${{ matrix.args }}
+
+  updater-manifest:
+    needs: publish-tauri
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Resolve release tag
+        id: tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Download .sig assets and build latest.json
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/updater-sigs
+          gh release download "$TAG" --repo "${{ github.repository }}" --dir /tmp/updater-sigs --pattern '*.sig'
+          ls -la /tmp/updater-sigs
+          node scripts/build-latest-json.mjs \
+            --tag="$TAG" \
+            --sig-dir=/tmp/updater-sigs \
+            --out=/tmp/latest.json \
+            --repo="${{ github.repository }}" \
+            --notes="My POS $TAG"
+          cat /tmp/latest.json
+
+      - name: Upload latest.json to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # Replace any existing latest.json from a partial earlier run.
+          if gh release view "$TAG" --repo "${{ github.repository }}" --json assets \
+            --jq '.assets[].name' | grep -qx 'latest.json'; then
+            gh release delete-asset "$TAG" latest.json --repo "${{ github.repository }}" --yes
+          fi
+          gh release upload "$TAG" /tmp/latest.json --repo "${{ github.repository }}" --clobber
