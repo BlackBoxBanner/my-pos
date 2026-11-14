@@ -35,6 +35,14 @@ const DENOMS = [20, 50, 100, 500, 1000];
 const PAGE_HINT =
   "Enter สแกน · 3*บาร์โค้ด · F9 ชำระ · Esc ล้าง · Ctrl+1 แท็บขาย";
 
+type PayMethod = "cash" | "qr" | "transfer";
+
+const PAY_METHODS: { id: PayMethod; label: string }[] = [
+  { id: "cash", label: "เงินสด" },
+  { id: "qr", label: "สแกน QR" },
+  { id: "transfer", label: "โอนเงิน" },
+];
+
 export function SellPage({ onAddProduct, onGoImport, active = true }: Props) {
   const scanRef = useRef<HTMLInputElement>(null);
   const busyRef = useRef(false);
@@ -52,6 +60,7 @@ export function SellPage({ onAddProduct, onGoImport, active = true }: Props) {
   const [receipt, setReceipt] = useState<Sale | null>(null);
   const [unknownBarcode, setUnknownBarcode] = useState<string | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
+  const [payMethod, setPayMethod] = useState<PayMethod>("cash");
 
   const loadCatalog = useCallback(async () => {
     try {
@@ -103,19 +112,32 @@ export function SellPage({ onAddProduct, onGoImport, active = true }: Props) {
   );
 
   const paidSatang = parseBahtInput(paidInput);
+  const tenderSatang = payMethod === "cash" ? paidSatang : totalSatang;
   const changeSatang =
-    paidSatang !== null && paidSatang >= totalSatang
-      ? paidSatang - totalSatang
-      : null;
+    payMethod === "cash"
+      ? paidSatang !== null && paidSatang >= totalSatang
+        ? paidSatang - totalSatang
+        : null
+      : cart.length > 0
+        ? 0
+        : null;
 
   const payDisabledReason = (() => {
     if (busy) return "กำลังบันทึก…";
     if (dayClosed) return "ปิดยอดแล้ว";
     if (cart.length === 0) return "ตะกร้าว่าง";
+    if (payMethod !== "cash") return null;
     if (paidSatang === null) return "กรุณาระบุเงินที่รับ";
     if (paidSatang < totalSatang) return "รับเงินไม่พอ";
     return null;
   })();
+
+  const payButtonLabel =
+    payMethod === "qr"
+      ? "ชำระด้วย QR (F9)"
+      : payMethod === "transfer"
+        ? "ชำระด้วยการโอน (F9)"
+        : "ชำระเงินสด (F9)";
 
   const refreshCartProducts = async () => {
     setCart((prev) => {
@@ -246,7 +268,7 @@ export function SellPage({ onAddProduct, onGoImport, active = true }: Props) {
     try {
       const sale = await checkout(
         cart.map((l) => ({ productId: l.product.id, qty: l.qty })),
-        paidSatang!,
+        tenderSatang!,
       );
       playSuccessSound(settings.soundEnabled);
       setReceipt(sale);
@@ -284,7 +306,17 @@ export function SellPage({ onAddProduct, onGoImport, active = true }: Props) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, receipt, cart.length, paidSatang, dayClosed, busy, settings]);
+  }, [
+    active,
+    receipt,
+    cart.length,
+    paidSatang,
+    totalSatang,
+    payMethod,
+    dayClosed,
+    busy,
+    settings,
+  ]);
 
   const addDenom = (baht: number) => {
     const current = paidSatang ?? 0;
@@ -371,9 +403,7 @@ export function SellPage({ onAddProduct, onGoImport, active = true }: Props) {
           <div className="min-h-0 flex-1 basis-0 space-y-2 overflow-y-auto px-4 py-3">
             {cart.length === 0 && (
               <p className="py-8 text-center text-sm text-slate-500">
-                {catalogEmpty
-                  ? "ตะกร้าว่าง"
-                  : "ตะกร้าว่าง — สแกนหรือค้นหาเพื่อเพิ่มสินค้า"}
+                {catalogEmpty ? "ตะกร้าว่าง" : "แตะสินค้าเพื่อเริ่มขาย"}
               </p>
             )}
             {cart.map((line) => (
@@ -441,52 +471,77 @@ export function SellPage({ onAddProduct, onGoImport, active = true }: Props) {
           <div className="shrink-0 space-y-3 border-t border-slate-100 bg-white px-4 py-4">
             {warn && <Alert tone="warning">{warn}</Alert>}
             {error && <Alert tone="error">{error}</Alert>}
-            <div className="flex justify-between text-2xl font-bold tracking-tight">
+            <div className="flex justify-between text-sm text-slate-600">
               <span>ยอดรวม</span>
               <span>{formatBaht(totalSatang)}</span>
             </div>
-            <div className="min-w-0">
-              <Input
-                label="รับเงิน (บาท)"
-                value={paidInput}
-                onChange={(e) => setPaidInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    void handleCheckout();
-                  }
-                }}
-                inputMode="decimal"
-                placeholder="0.00"
-                size="lg"
-                error={
-                  paidSatang !== null &&
-                  totalSatang > 0 &&
-                  paidSatang < totalSatang
-                    ? true
-                    : null
-                }
-              />
-              <div className="mt-2 flex flex-wrap gap-1">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => setPaidInput((totalSatang / 100).toFixed(2))}
-                >
-                  พอดี
-                </Button>
-                {DENOMS.map((d) => (
+            <div className="flex justify-between text-2xl font-bold tracking-tight">
+              <span>ยอดที่ต้องชำระ</span>
+              <span>{formatBaht(totalSatang)}</span>
+            </div>
+            <div>
+              <p className="mb-2 text-sm font-medium text-slate-700">
+                เลือกวิธีชำระเงิน
+              </p>
+              <div className="grid grid-cols-3 gap-2">
+                {PAY_METHODS.map((method) => (
                   <Button
-                    key={d}
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => addDenom(d)}
+                    key={method.id}
+                    variant={payMethod === method.id ? "primary" : "secondary"}
+                    onClick={() => setPayMethod(method.id)}
+                    aria-pressed={payMethod === method.id}
                   >
-                    +{d}
+                    {method.label}
                   </Button>
                 ))}
               </div>
             </div>
+            {payMethod === "cash" && (
+              <div className="min-w-0">
+                <Input
+                  label="รับเงิน (บาท)"
+                  value={paidInput}
+                  onChange={(e) => setPaidInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void handleCheckout();
+                    }
+                  }}
+                  inputMode="decimal"
+                  placeholder="0.00"
+                  size="lg"
+                  error={
+                    paidSatang !== null &&
+                    totalSatang > 0 &&
+                    paidSatang < totalSatang
+                      ? true
+                      : null
+                  }
+                />
+                <div className="mt-2 flex flex-wrap gap-1">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() =>
+                      setPaidInput((totalSatang / 100).toFixed(2))
+                    }
+                  >
+                    พอดี
+                  </Button>
+                  {DENOMS.map((d) => (
+                    <Button
+                      key={d}
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => addDenom(d)}
+                    >
+                      +{d}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="flex justify-between text-base">
               <span className="text-slate-600">เงินทอน</span>
               <span className="text-xl font-semibold text-emerald-700">
@@ -505,7 +560,7 @@ export function SellPage({ onAddProduct, onGoImport, active = true }: Props) {
                 ? payDisabledReason
                 : busy
                   ? "กำลังบันทึก…"
-                  : "ชำระเงินสด (F9)"}
+                  : payButtonLabel}
             </Button>
           </div>
         </aside>
